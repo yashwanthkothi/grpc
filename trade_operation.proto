@@ -1,79 +1,60 @@
 syntax = "proto3";
-
 package trade_operation;
-
-// -------- Service to send system information --------
+// Service to send system information
 service TradeOperation {
   // Send system info
   rpc SendSystemInfo (SystemInfoRequest) returns (SystemInfoResponse);
-
   // Send reference data info (for future implementation)
   rpc SendRefDataInfo (RefDataInfoRequest) returns (RefDataInfoResponse);
 }
-
-// -------- Detailed System Info --------
+// Detailed System Info
 message SystemInfoRequest {
   // System identification
-  string server_name = 1;  // System name
-  
+  string server_name = 1;
   // Temperature metrics
   int32 cpu_temp = 2;           // in Celsius
   int32 motherboard_temp = 3;   // in Celsius
   int32 exanic_temp = 4;        // in Celsius
-  
   // Resource usage
   float hdd_usage = 5;          // percentage (0-100)
   float ram_usage = 6;          // percentage (0-100)
-  
   // Time synchronization
   float clock_drift = 7;        // in milliseconds
   bool ptp_sync_status = 8;     // true if synchronized
-  
   // System health
   uint64 page_faults = 9;       // count of page faults
   bool fan_failure = 10;        // true if any fan has failed
 }
-
-// -------- The response message acknowledging receipt --------
+// The response message acknowledging receipt
 message SystemInfoResponse {
   string message = 1;
 }
-
-// -------- Service to check server health and connectivity --------
+// Service to check server health and connectivity
 service ConnectivityService {
   rpc CheckServerHealth (NetworkInfoRequest) returns (NetworkInfoResponse);
 }
-
-// -------- Network Info --------
 message NetworkInfoRequest {
   string client_ip = 1; // Client IP to check server connectivity
 }
-
 message NetworkInfoResponse {
   string message = 1;  // Message indicating the status
   bool is_healthy = 2; // True if server is healthy
 }
-
-// -------- Telnet Service to execute commands --------
+// Telnet Service to execute commands
 service TelnetService {
   rpc ExecuteCommand (CommandRequest) returns (CommandResponse);
 }
-
 message CommandRequest {
   string command = 1; // Command to execute over Telnet
 }
-
 message CommandResponse {
   string result = 1; // The result of the command execution
 }
-
-// -------- Red Data Info (template for future expansion) --------
+// Red Data Info (template for future expansion)
 message RefDataInfoRequest {
   // To be implemented later
 }
-
+// The response message acknowledging receipt
 message RefDataInfoResponse {
   string message = 1;
 }
-
-

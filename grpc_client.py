@@ -6,7 +6,6 @@ import os
 import socket
 import subprocess
 from typing import Optional, Dict, Any, Tuple
-
 class SystemDataFetcher:
     def __init__(self):
         self.metrics = {
@@ -21,7 +20,6 @@ class SystemDataFetcher:
             'page_faults': None,
             'fan_failure': None
         }
-
     def fetch_all_metrics(self) -> Dict[str, Any]:
         self.metrics.update({
             'cpu_temp': self._get_cpu_temperature(),
@@ -35,23 +33,22 @@ class SystemDataFetcher:
             'fan_failure': not self._check_fan_status()  # Inverted for fan_failure
         })
         return self.metrics
-
     def _get_hostname(self) -> str:
+        """Get the system hostname using subprocess with fallbacks"""
         try:
+            # Primary method: Use subprocess to run `hostname` command
             result = subprocess.run(["hostname"], capture_output=True, text=True, timeout=2)
             hostname = result.stdout.strip()
             if hostname and hostname != 'localhost':
                 return hostname
+            # Fallback to socket.gethostname()
             hostname = socket.gethostname()
             if hostname and hostname != 'localhost':
                 return hostname
             return os.environ.get('HOSTNAME', 'unknown-server')
         except Exception:
             return 'unknown-server'
-
-    
     def _get_cpu_temperature(self) -> Optional[int]:
-        """Fetch CPU temperature from system files"""
         try:
             for zone in os.listdir("/sys/class/thermal"):
                 if zone.startswith("thermal_zone"):
@@ -59,12 +56,11 @@ class SystemDataFetcher:
                         temp = int(f.read().strip()) / 1000
                         if temp > 0:
                             return int(round(temp))
+                        print(f'cpu temp : {temp}')
             return None
         except Exception:
             return None
-
     def _get_motherboard_temperature(self) -> Optional[int]:
-        """Fetch motherboard temperature from system files"""
         try:
             for hwmon in os.listdir("/sys/class/hwmon"):
                 hwmon_path = os.path.join("/sys/class/hwmon", hwmon)
@@ -75,36 +71,31 @@ class SystemDataFetcher:
                                 temp = int(f.read().strip()) / 1000
                                 if temp > 0:
                                     return int(round(temp))
+                                print(f'motherboard temp : {temp}')
             return None
         except Exception:
             return None
-
     def _get_exanic_temperature(self) -> Optional[int]:
-        """Fetch Exanic temperature using subprocess"""
         try:
             result = subprocess.run("exanic-config | grep Temperature", capture_output=True, text=True, shell=True)
             if result.stdout:
+                print(f'Exanic temp : {result.stdout}')
                 return int(round(float(result.stdout.split(":")[1].strip().split()[0])))
             return None
         except Exception:
             return None
-
     def _get_hdd_space_usage(self) -> Optional[float]:
-        """Get HDD space usage"""
         try:
             return round(psutil.disk_usage('/').percent, 1)
         except Exception:
             return None
-
     def _get_ram_usage(self) -> Optional[float]:
-        """Get RAM usage"""
         try:
             return round(psutil.virtual_memory().percent, 1)
         except Exception:
             return None
-
     def _get_ptp_sync_status(self) -> bool:
-        """Check PTP synchronization status"""
+        """Check PTP synchronization status using multiple methods"""
         try:
             result = subprocess.run(["ptp4l", "-i", "enp1s0d4", "-m", "-q", "--summary"],
                                     capture_output=True, text=True, timeout=3)
@@ -116,9 +107,8 @@ class SystemDataFetcher:
         except Exception as e:
             print(f"PTP status check error: {e}")
             return False
-
     def _get_clock_drift(self) -> Optional[float]:
-        """Get clock drift in milliseconds"""
+        """Get clock drift in milliseconds using multiple methods"""
         try:
             result = subprocess.run(["phc2sys", "-s", "enp1s0d4", "-w", "-m", "-q", "--summary"],
                                     capture_output=True, text=True, timeout=3)
@@ -129,9 +119,7 @@ class SystemDataFetcher:
         except Exception as e:
             print(f"Clock drift check error: {e}")
             return None
-
     def _get_page_faults(self) -> int:
-        """Get page fault count"""
         try:
             with open("/proc/vmstat", "r") as f:
                 data = f.read()
@@ -140,9 +128,7 @@ class SystemDataFetcher:
                 return minor + major  # Return total page faults
         except Exception:
             return 0
-
     def _check_fan_status(self) -> bool:
-        """Check fan status"""
         try:
             for hwmon in os.listdir("/sys/class/hwmon"):
                 hwmon_path = os.path.join("/sys/class/hwmon", hwmon)
@@ -154,16 +140,15 @@ class SystemDataFetcher:
             return True
         except Exception:
             return True  # Assume OK if can't check
-    # (Other sensor methods like _get_cpu_temperature, _get_motherboard_temperature etc.)
-
 class SystemDataProcessor:
+    """Second class: Processes and validates data from Fetcher"""
     def __init__(self, data_fetcher: SystemDataFetcher):
         self.data_fetcher = data_fetcher
         self.processed_data = None
-
     def process_data(self) -> Dict[str, Any]:
+        """Process and validate the collected metrics"""
         raw_data = self.data_fetcher.fetch_all_metrics()
-
+        # Convert and validate all fields according to proto requirements
         self.processed_data = {
             'server_name': raw_data['server_name'],
             'cpu_temp': int(round(raw_data['cpu_temp'])) if raw_data['cpu_temp'] is not None else 0,
@@ -177,28 +162,35 @@ class SystemDataProcessor:
             'fan_failure': bool(raw_data['fan_failure'])
         }
         return self.processed_data
-
 class SystemDataTransmitter:
+    """Third class: Handles gRPC communication with server"""
     def __init__(self, server_address: str):
         self.server_address = server_address
         self.channel_options = [
             ('grpc.connect_timeout_ms', 5000),
             ('grpc.keepalive_time_ms', 10000),
         ]
-
+    def _test_connection(self, host: str, port: int, timeout=3) -> bool:
+        """Test TCP connection to server"""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect((host, port))
+            return True
+        except Exception as e:
+            print(f"Connection test failed to {host}:{port}: {e}")
+            return False
     def send_data(self, data: Dict[str, Any]) -> bool:
+        """Send processed data to gRPC server"""
         try:
             host, port = self.server_address.split(':')
             port = int(port)
         except ValueError:
             print(f"Invalid server address format: {self.server_address}")
             return False
-
-        # Test the connection to the server
         if not self._test_connection(host, port):
             print("Cannot establish connection to server")
             return False
-
         try:
             with grpc.insecure_channel(self.server_address, options=self.channel_options) as channel:
                 stub = trade_operation_pb2_grpc.TradeOperationStub(channel)
@@ -224,102 +216,49 @@ class SystemDataTransmitter:
         except Exception as e:
             print(f"Unexpected error: {str(e)}")
             return False
+class TelnetConnectivityChecker:
+    def __init__(self, server_address: str):
+        self.server_address = server_address
+        self.channel = grpc.insecure_channel(server_address)
+        self.stub = trade_operation_pb2_grpc.ConnectivityCheckerStub(self.channel)
 
-    def _test_connection(self, host: str, port: int, timeout=3) -> bool:
+    def check_connectivity(self, target_ips: list, port: int = 23, timeout_seconds: int = 5):
+        request = trade_operation_pb2.TelnetRequest(
+            target_ips=target_ips,
+            port=port,
+            timeout_seconds=timeout_seconds
+        )
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(timeout)
-                s.connect((host, port))
-            return True
-        except Exception as e:
-            print(f"Connection test failed to {host}:{port}: {e}")
-            return False
+            response = self.stub.CheckTelnet(request)
+            self._print_results(response.results)
+        except grpc.RpcError as e:
+            print(f"gRPC error occurred: {e.code()}: {e.details()}")
 
-class ConnectivityClient:
-    def __init__(self, address='localhost:50051'):
-        self.address = address
-
-    def check_server_health(self):
-        with grpc.insecure_channel(self.address) as channel:
-            stub = trade_operation_pb2_grpc.ConnectivityServiceStub(channel)
-            request = trade_operation_pb2.NetworkInfoRequest(client_ip=self.get_local_ip())
-            response = stub.CheckServerHealth(request)
-            print(f"Server Health Check: {response.message}, Healthy: {response.is_healthy}")
-            return response.is_healthy
-
-    def get_local_ip(self) -> str:
-        """Automatically get the local machine's IP address"""
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0)
-        try:
-            s.connect(('10.254.254.254', 1))  # Doesn't even need to be reachable
-            ip = s.getsockname()[0]
-        except Exception:
-            ip = '127.0.0.1'  # Default to localhost if no connection
-        finally:
-            s.close()
-        return ip    
-
-# Client to execute Telnet commands
-class TelnetClient:
-    def __init__(self, address='localhost:50051'):
-        self.address = address
-        self.channel = grpc.insecure_channel(self.address)
-        self.stub = trade_operation_pb2_grpc.TelnetServiceStub(self.channel)
-
-    def execute_command(self, command: str):
-        with grpc.insecure_channel(self.address) as channel:
-            stub = trade_operation_pb2_grpc.TelnetServiceStub(channel)
-            request = trade_operation_pb2.CommandRequest(command=command)
-            response = stub.ExecuteCommand(request)
-            print(f"Command Result: {response.result}")
-            return response.result
-
-    def close(self):
-        self.channel.close()
-
-def run(server_address: str):
-    # Check server health
-    connectivity_client = ConnectivityClient(server_address)
-    if connectivity_client.check_server_health():
-        print("Server is healthy!")
-    else:
-        print("Server is not healthy!")
-
-    # Execute a Telnet command (e.g., 'ls')
-    telnet_client = TelnetClient(server_address)
-
-    try:
-        while True:
-            # Accept user input for commands to send via Telnet
-            command = input("Enter Telnet command (or type 'exit' to quit): ")
-            if command.lower() == 'exit':
-                print("Exiting Telnet session.")
-                break
-            telnet_client.execute_command(command)
-    except KeyboardInterrupt:
-        print("\nSession interrupted.")
-    finally:
-        telnet_client.close()
-
+    def _print_results(self, results):
+        for result in results:
+            status = "REACHABLE" if result.reachable else "UNREACHABLE"
+            print(f"{result.ip}: {status}")
+            if not result.reachable:
+                print(f"  Error: {result.error}")
 if __name__ == "__main__":
-    SERVER_ADDRESS = "172.31.3.161:50051"  # Your server IP
-
+    SERVER_ADDRESS = "192.168.0.118:50051"
     # Initialize all components
     fetcher = SystemDataFetcher()
     processor = SystemDataProcessor(fetcher)
     transmitter = SystemDataTransmitter(SERVER_ADDRESS)
-
     # Data flow: Fetcher → Processor → Transmitter
     print("Starting system monitoring...")
     processed_data = processor.process_data()
     print("Processed metrics:", processed_data)
-
     if transmitter.send_data(processed_data):
         print("Data successfully transmitted to server")
     else:
         print("Data transmission failed")
+    checker = TelnetConnectivityChecker('192.168.0.118:50051')
+    checker.check_connectivity(["192.168.0.119", "192.168.0.120"])
 
-    # Start the Telnet and health check function
-    run(SERVER_ADDRESS)
+
+
+
+
 

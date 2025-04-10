@@ -7,6 +7,10 @@ service TradeOperation {
   // Send reference data info (for future implementation)
   rpc SendRefDataInfo (RefDataInfoRequest) returns (RefDataInfoResponse);
 }
+service ConnectivityChecker {   
+  rpc CheckTelnet (TelnetRequest) returns (TelnetResponse);
+
+}
 // Detailed System Info
 message SystemInfoRequest {
   // System identification
@@ -29,26 +33,18 @@ message SystemInfoRequest {
 message SystemInfoResponse {
   string message = 1;
 }
-// Service to check server health and connectivity
-service ConnectivityService {
-  rpc CheckServerHealth (NetworkInfoRequest) returns (NetworkInfoResponse);
+message TelnetRequest {
+  repeated string target_ips = 1;
+  int32 port = 2;
+  int32 timeout_seconds = 3;
 }
-message NetworkInfoRequest {
-  string client_ip = 1; // Client IP to check server connectivity
-}
-message NetworkInfoResponse {
-  string message = 1;  // Message indicating the status
-  bool is_healthy = 2; // True if server is healthy
-}
-// Telnet Service to execute commands
-service TelnetService {
-  rpc ExecuteCommand (CommandRequest) returns (CommandResponse);
-}
-message CommandRequest {
-  string command = 1; // Command to execute over Telnet
-}
-message CommandResponse {
-  string result = 1; // The result of the command execution
+message TelnetResponse {
+  message Result {
+      string ip = 1;
+      bool reachable = 2;
+      string error = 3;
+  }
+  repeated Result results = 1;
 }
 // Red Data Info (template for future expansion)
 message RefDataInfoRequest {

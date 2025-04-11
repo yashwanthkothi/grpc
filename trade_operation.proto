@@ -1,47 +1,67 @@
 syntax = "proto3";
-
 package trade_operation;
-
+// Service to send system information
 service TradeOperation {
-  // Send operations
+  // Send system info
   rpc SendSystemInfo (SystemInfoRequest) returns (SystemInfoResponse);
-  rpc SendRefDataInfo (RefDataInfoRequest) returns (RefDataInfoResponse);
+  // Send reference data info (for future implementation)
+  rpc SendRefDataInfo (RefDataInfoRequest) returns (RefDataInfoResponse);   
+  rpc CheckTelnet (TelnetRequest) returns (TelnetResponse);
 }
-
 // Detailed System Info
 message SystemInfoRequest {
   // System identification
   string server_name = 1;
-
   // Temperature metrics
   int32 cpu_temp = 2;           // in Celsius
   int32 motherboard_temp = 3;   // in Celsius
   int32 exanic_temp = 4;        // in Celsius
-
   // Resource usage
   float hdd_usage = 5;          // percentage (0-100)
   float ram_usage = 6;          // percentage (0-100)
-
   // Time synchronization
   float clock_drift = 7;        // in milliseconds
   bool ptp_sync_status = 8;     // true if synchronized
-
   // System health
   uint64 page_faults = 9;       // count of page faults
   bool fan_failure = 10;        // true if any fan has failed
 }
 
-// The response message acknowledging receipt
 message SystemInfoResponse {
   string message = 1;
+}
+// The response message acknowledging receipt
+message TelnetTarget {
+  string ip = 1;
+  int32 port = 2;
+  bool reachable = 3;
+  string error = 4;
+  double response_time = 5;
+}
+
+message TelnetRequest {
+  string source_server = 1;
+  repeated TelnetTarget targets = 2;
+  int32 timeout_seconds = 3;
+}
+
+message TelnetResponse {
+  message Result {
+    string ip = 1;
+    int32 port = 2;
+    bool reachable = 3;
+    string error = 4;
+    double response_time = 5;
+  }
+  repeated Result results = 1;
 }
 
 // Red Data Info (template for future expansion)
 message RefDataInfoRequest {
   // To be implemented later
 }
-
 // The response message acknowledging receipt
 message RefDataInfoResponse {
   string message = 1;
 }
+
